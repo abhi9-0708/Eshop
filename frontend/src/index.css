@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #f8fafc;
+  color: #1e293b;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* Auth gradient background */
+.auth-gradient {
+  background: linear-gradient(135deg, #312e81 0%, #4338ca 30%, #6366f1 60%, #818cf8 100%);
+}
+
+/* Glass card for auth pages */
+.glass-card {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Utility classes */
+@layer components {
+  .btn-primary {
+    @apply bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 px-4 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98];
+  }
+  .btn-secondary {
+    @apply bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-xl transition-all duration-200 border border-gray-200;
+  }
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-xl transition-all duration-200 active:scale-[0.98];
+  }
+  .btn-success {
+    @apply bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-xl transition-all duration-200 active:scale-[0.98];
+  }
+  .input-field {
+    @apply w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-400 focus:bg-white transition-all duration-200 placeholder:text-gray-400;
+  }
+  .card {
+    @apply bg-white rounded-2xl shadow-card border border-gray-100/80 p-6 transition-shadow duration-300 hover:shadow-card-hover;
+  }
+  .badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold;
+  }
+}
+
+/* Smooth page transitions */
+.animate-page-enter {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Table improvements */
+table th {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+table tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+/* Focus visible for accessibility */
+*:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
