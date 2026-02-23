@@ -11,7 +11,16 @@ const getDb = () => {
 
 const connectDB = async () => {
   try {
-    const dbPath = process.env.SQLITE_PATH || path.join(__dirname, '../../data/retailshop.db');
+    let dbPath;
+    if (process.env.SQLITE_PATH) {
+      dbPath = process.env.SQLITE_PATH;
+    } else if (process.env.VERCEL) {
+      // Use /tmp on Vercel serverless functions (only writable directory)
+      dbPath = '/tmp/retailshop.db';
+    } else {
+      dbPath = path.join(__dirname, '../../data/retailshop.db');
+    }
+
     const dir = path.dirname(dbPath);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
@@ -24,7 +33,10 @@ const connectDB = async () => {
     return db;
   } catch (error) {
     console.error(`SQLite Connection Error: ${error.message}`);
-    process.exit(1);
+    if (!process.env.VERCEL) {
+      process.exit(1);
+    }
+    throw error;
   }
 };
 
