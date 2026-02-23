@@ -6,7 +6,7 @@ const register = async (req, res, next) => {
   try {
     const { name, email, password, role, phone, territory, distributor } = req.body;
 
-    const existing = User.findByEmail(email);
+    const existing = await User.findByEmail(email);
     if (existing) {
       return res.status(400).json({ success: false, message: 'Email already registered' });
     }
@@ -28,7 +28,7 @@ const login = async (req, res, next) => {
   try {
     const { email, password } = req.body;
 
-    const user = User.findByEmail(email, true);
+    const user = await User.findByEmail(email, true);
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
@@ -42,7 +42,7 @@ const login = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    User.update(user._id, { lastLogin: new Date().toISOString() });
+    await User.update(user._id, { lastLogin: new Date().toISOString() });
     const token = User.generateToken(user);
     delete user.password;
 
@@ -58,7 +58,7 @@ const login = async (req, res, next) => {
 // GET /api/auth/me
 const getMe = async (req, res, next) => {
   try {
-    const user = User.findById(req.user._id || req.user.id);
+    const user = await User.findById(req.user._id || req.user.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -72,7 +72,7 @@ const getMe = async (req, res, next) => {
 const updateProfile = async (req, res, next) => {
   try {
     const { name, phone, territory } = req.body;
-    const user = User.update(req.user._id || req.user.id, { name, phone, territory });
+    const user = await User.update(req.user._id || req.user.id, { name, phone, territory });
     res.json({ success: true, data: user });
   } catch (error) {
     next(error);
@@ -84,7 +84,7 @@ const changePassword = async (req, res, next) => {
   try {
     const { currentPassword, newPassword } = req.body;
 
-    const user = User.findById(req.user._id || req.user.id, true);
+    const user = await User.findById(req.user._id || req.user.id, true);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -95,7 +95,7 @@ const changePassword = async (req, res, next) => {
     }
 
     const hashedPassword = await User.hashPassword(newPassword);
-    const updated = User.update(user._id, { password: hashedPassword });
+    const updated = await User.update(user._id, { password: hashedPassword });
     const token = User.generateToken(updated);
 
     res.json({ success: true, data: { ...updated, token }, message: 'Password changed successfully' });

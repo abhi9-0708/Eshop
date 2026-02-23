@@ -3,7 +3,7 @@ const { getDb } = require('../config/database');
 // GET /api/dashboard
 const getDashboardStats = async (req, res, next) => {
   try {
-    const db = getDb();
+    const pool = getDb();
     const userId = req.user._id || req.user.id;
     const role = req.user.role;
 
@@ -13,46 +13,54 @@ const getDashboardStats = async (req, res, next) => {
     const retailerParams = [];
 
     if (role === 'distributor') {
-      orderWhere = 'o.distributor = ?';
+      orderWhere = 'o.distributor = $1';
       orderParams.push(userId);
-      retailerWhere = 'r.distributor = ?';
+      retailerWhere = 'r.distributor = $1';
       retailerParams.push(userId);
     } else if (role === 'sales_rep') {
-      orderWhere = 'o.salesRep = ?';
+      orderWhere = 'o."salesRep" = $1';
       orderParams.push(userId);
-      retailerWhere = 'r.assignedTo = ?';
+      retailerWhere = 'r."assignedTo" = $1';
       retailerParams.push(userId);
     }
 
     // Counts
-    const totalRetailers = db.prepare(`SELECT COUNT(*) as count FROM retailers r WHERE ${retailerWhere}`).get(...retailerParams).count;
-    const totalOrders = db.prepare(`SELECT COUNT(*) as count FROM orders o WHERE ${orderWhere}`).get(...orderParams).count;
-    const totalProducts = db.prepare('SELECT COUNT(*) as count FROM products WHERE isActive = 1').get().count;
-    const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+    const { rows: retRows } = await pool.query(`SELECT COUNT(*) as count FROM retailers r WHERE ${retailerWhere}`, retailerParams);
+    const totalRetailers = parseInt(retRows[0].count);
+
+    const { rows: ordRows } = await pool.query(`SELECT COUNT(*) as count FROM orders o WHERE ${orderWhere}`, orderParams);
+    const totalOrders = parseInt(ordRows[0].count);
+
+    const { rows: prodRows } = await pool.query('SELECT COUNT(*) as count FROM products WHERE "isActive" = true');
+    const totalProducts = parseInt(prodRows[0].count);
+
+    const { rows: userRows } = await pool.query('SELECT COUNT(*) as count FROM users');
+    const totalUsers = parseInt(userRows[0].count);
 
     // Revenue calculation (this month)
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
-    const revenueResult = db.prepare(`
-      SELECT COALESCE(SUM(totalAmount), 0) as revenue
+    const revenueParamIdx = orderParams.length + 1;
+    const { rows: revenueRows } = await pool.query(`
+      SELECT COALESCE(SUM("totalAmount"), 0) as revenue
       FROM orders o
-      WHERE ${orderWhere} AND o.status != 'cancelled' AND o.createdAt >= ?
-    `).get(...orderParams, startOfMonth.toISOString());
-    const monthlyRevenue = revenueResult.revenue;
+      WHERE ${orderWhere} AND o.status != 'cancelled' AND o."createdAt" >= $${revenueParamIdx}
+    `, [...orderParams, startOfMonth.toISOString()]);
+    const monthlyRevenue = revenueRows[0].revenue;
 
     // Recent orders
-    let recentOrdersSQL = `
+    const { rows: recentRows } = await pool.query(`
       SELECT o.*,
         ret.name as ret_name, sr.name as sr_name
       FROM orders o
       LEFT JOIN retailers ret ON o.retailer = ret._id
-      LEFT JOIN users sr ON o.salesRep = sr._id
+      LEFT JOIN users sr ON o."salesRep" = sr._id
       WHERE ${orderWhere}
-      ORDER BY o.createdAt DESC LIMIT 5
-    `;
-    const recentOrders = db.prepare(recentOrdersSQL).all(...orderParams).map(row => ({
+      ORDER BY o."createdAt" DESC LIMIT 5
+    `, orderParams);
+    const recentOrders = recentRows.map(row => ({
       _id: row._id,
       orderNumber: row.orderNumber,
       retailer: { _id: row.retailer, name: row.ret_name },
@@ -64,26 +72,27 @@ const getDashboardStats = async (req, res, next) => {
     }));
 
     // Status distribution
-    const statusDistribution = db.prepare(`
-      SELECT status, COUNT(*) as count, COALESCE(SUM(totalAmount), 0) as totalAmount
+    const { rows: statusDistribution } = await pool.query(`
+      SELECT status, COUNT(*) as count, COALESCE(SUM("totalAmount"), 0) as "totalAmount"
       FROM orders o WHERE ${orderWhere}
       GROUP BY status
-    `).all(...orderParams);
+    `, orderParams);
 
     // Top retailers
-    const topRetailers = db.prepare(`
-      SELECT o.retailer as retailerId, ret.name, ret.ownerName,
-        COUNT(*) as orderCount, COALESCE(SUM(o.totalAmount), 0) as totalRevenue
+    const { rows: topRetRows } = await pool.query(`
+      SELECT o.retailer as "retailerId", ret.name, ret."ownerName",
+        COUNT(*) as "orderCount", COALESCE(SUM(o."totalAmount"), 0) as "totalRevenue"
       FROM orders o
       LEFT JOIN retailers ret ON o.retailer = ret._id
       WHERE ${orderWhere} AND o.status != 'cancelled'
-      GROUP BY o.retailer
-      ORDER BY totalRevenue DESC
+      GROUP BY o.retailer, ret.name, ret."ownerName"
+      ORDER BY "totalRevenue" DESC
       LIMIT 5
-    `).all(...orderParams).map(row => ({
+    `, orderParams);
+    const topRetailers = topRetRows.map(row => ({
       retailer: { _id: row.retailerId, name: row.name, ownerName: row.ownerName },
-      orderCount: row.orderCount,
-      totalRevenue: row.totalRevenue
+      orderCount: parseInt(row.orderCount),
+      totalRevenue: parseFloat(row.totalRevenue)
     }));
 
     res.json({

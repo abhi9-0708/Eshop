@@ -10,31 +10,32 @@ const getProducts = async (req, res, next) => {
 
     const conditions = [];
     const params = [];
+    let paramIdx = 1;
 
     if (search) {
-      conditions.push('(name LIKE ? OR sku LIKE ? OR brand LIKE ?)');
+      conditions.push(`(name ILIKE $${paramIdx++} OR sku ILIKE $${paramIdx++} OR brand ILIKE $${paramIdx++})`);
       const s = `%${search}%`;
       params.push(s, s, s);
     }
     if (category) {
-      conditions.push('category = ?');
+      conditions.push(`category = $${paramIdx++}`);
       params.push(category);
     }
     if (active !== undefined) {
-      conditions.push('isActive = ?');
-      params.push(active === 'true' || active === '1' ? 1 : 0);
+      conditions.push(`"isActive" = $${paramIdx++}`);
+      params.push(active === 'true' || active === '1');
     }
 
     const where = conditions.length ? conditions.join(' AND ') : '1=1';
-    let orderBy = 'createdAt DESC';
+    let orderBy = '"createdAt" DESC';
     if (sort) {
       const desc = sort.startsWith('-');
       const field = sort.replace(/^-/, '');
-      orderBy = `${field} ${desc ? 'DESC' : 'ASC'}`;
+      orderBy = `"${field}" ${desc ? 'DESC' : 'ASC'}`;
     }
 
-    const products = Product.findAll({ where, params, orderBy, limit: limitNum, offset });
-    const total = Product.count(where, params);
+    const products = await Product.findAll({ where, params, orderBy, limit: limitNum, offset });
+    const total = await Product.count(where, params);
 
     res.json({
       success: true,
@@ -49,7 +50,7 @@ const getProducts = async (req, res, next) => {
 // GET /api/products/:id
 const getProduct = async (req, res, next) => {
   try {
-    const product = Product.findById(req.params.id);
+    const product = await Product.findById(req.params.id);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
@@ -62,10 +63,10 @@ const getProduct = async (req, res, next) => {
 // POST /api/products
 const createProduct = async (req, res, next) => {
   try {
-    const product = Product.create(req.body);
+    const product = await Product.create(req.body);
     res.status(201).json({ success: true, data: product });
   } catch (error) {
-    if (error.message && error.message.includes('UNIQUE constraint failed')) {
+    if (error.code === '23505' || (error.message && error.message.includes('unique'))) {
       return res.status(400).json({ success: false, message: 'A product with this SKU already exists' });
     }
     next(error);
@@ -75,11 +76,11 @@ const createProduct = async (req, res, next) => {
 // PUT /api/products/:id
 const updateProduct = async (req, res, next) => {
   try {
-    const existing = Product.findById(req.params.id);
+    const existing = await Product.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
-    const product = Product.update(req.params.id, req.body);
+    const product = await Product.update(req.params.id, req.body);
     res.json({ success: true, data: product });
   } catch (error) {
     next(error);
@@ -89,11 +90,11 @@ const updateProduct = async (req, res, next) => {
 // DELETE /api/products/:id
 const deleteProduct = async (req, res, next) => {
   try {
-    const existing = Product.findById(req.params.id);
+    const existing = await Product.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
-    Product.delete(req.params.id);
+    await Product.delete(req.params.id);
     res.json({ success: true, message: 'Product deleted successfully' });
   } catch (error) {
     next(error);
@@ -103,7 +104,7 @@ const deleteProduct = async (req, res, next) => {
 // GET /api/products/categories
 const getCategories = async (req, res, next) => {
   try {
-    const categories = Product.distinct('category', 'isActive = 1');
+    const categories = await Product.distinct('category', '"isActive" = true');
     res.json({ success: true, data: categories });
   } catch (error) {
     next(error);
@@ -114,7 +115,7 @@ const getCategories = async (req, res, next) => {
 const updateStock = async (req, res, next) => {
   try {
     const { quantity, operation } = req.body;
-    const product = Product.findById(req.params.id);
+    const product = await Product.findById(req.params.id);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
@@ -131,7 +132,7 @@ const updateStock = async (req, res, next) => {
       newStock = quantity;
     }
 
-    const updated = Product.update(req.params.id, { stock: newStock });
+    const updated = await Product.update(req.params.id, { stock: newStock });
     res.json({ success: true, data: updated });
   } catch (error) {
     next(error);

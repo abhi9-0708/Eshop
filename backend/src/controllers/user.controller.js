@@ -10,24 +10,25 @@ const getUsers = async (req, res, next) => {
 
     const conditions = [];
     const params = [];
+    let paramIdx = 1;
 
     if (search) {
-      conditions.push('(name LIKE ? OR email LIKE ? OR phone LIKE ?)');
+      conditions.push(`(name ILIKE $${paramIdx++} OR email ILIKE $${paramIdx++} OR phone ILIKE $${paramIdx++})`);
       const s = `%${search}%`;
       params.push(s, s, s);
     }
-    if (role) { conditions.push('role = ?'); params.push(role); }
+    if (role) { conditions.push(`role = $${paramIdx++}`); params.push(role); }
 
     const where = conditions.length ? conditions.join(' AND ') : '1=1';
-    let orderBy = 'createdAt DESC';
+    let orderBy = '"createdAt" DESC';
     if (sort) {
       const desc = sort.startsWith('-');
       const field = sort.replace(/^-/, '');
-      orderBy = `${field} ${desc ? 'DESC' : 'ASC'}`;
+      orderBy = `"${field}" ${desc ? 'DESC' : 'ASC'}`;
     }
 
-    const users = User.findAll({ where, params, orderBy, limit: limitNum, offset });
-    const total = User.count(where, params);
+    const users = await User.findAll({ where, params, orderBy, limit: limitNum, offset });
+    const total = await User.count(where, params);
 
     res.json({
       success: true,
@@ -42,7 +43,7 @@ const getUsers = async (req, res, next) => {
 // GET /api/users/:id
 const getUser = async (req, res, next) => {
   try {
-    const user = User.findById(req.params.id);
+    const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -55,11 +56,11 @@ const getUser = async (req, res, next) => {
 // PUT /api/users/:id
 const updateUser = async (req, res, next) => {
   try {
-    const existing = User.findById(req.params.id);
+    const existing = await User.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    const user = User.update(req.params.id, req.body);
+    const user = await User.update(req.params.id, req.body);
     res.json({ success: true, data: user });
   } catch (error) {
     next(error);
@@ -69,17 +70,17 @@ const updateUser = async (req, res, next) => {
 // DELETE /api/users/:id
 const deleteUser = async (req, res, next) => {
   try {
-    const existing = User.findById(req.params.id);
+    const existing = await User.findById(req.params.id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
     if (existing.role === 'admin') {
-      const adminCount = User.count("role = 'admin'");
+      const adminCount = await User.count("role = 'admin'");
       if (adminCount <= 1) {
         return res.status(400).json({ success: false, message: 'Cannot delete the last admin user' });
       }
     }
-    User.delete(req.params.id);
+    await User.delete(req.params.id);
     res.json({ success: true, message: 'User deleted successfully' });
   } catch (error) {
     next(error);
@@ -89,7 +90,7 @@ const deleteUser = async (req, res, next) => {
 // GET /api/users/distributors
 const getDistributors = async (req, res, next) => {
   try {
-    const distributors = User.findAll({ where: "role = 'distributor' AND isActive = 1", limit: 100 });
+    const distributors = await User.findAll({ where: `role = 'distributor' AND "isActive" = true`, limit: 100 });
     res.json({ success: true, data: distributors });
   } catch (error) {
     next(error);
@@ -99,15 +100,16 @@ const getDistributors = async (req, res, next) => {
 // GET /api/users/sales-reps
 const getSalesReps = async (req, res, next) => {
   try {
-    const conditions = ["role = 'sales_rep' AND isActive = 1"];
+    const conditions = [`role = 'sales_rep' AND "isActive" = true`];
     const params = [];
+    let paramIdx = 1;
 
     if (req.user.role === 'distributor') {
-      conditions.push('distributor = ?');
+      conditions.push(`distributor = $${paramIdx++}`);
       params.push(req.user._id || req.user.id);
     }
 
-    const salesReps = User.findAll({ where: conditions.join(' AND '), params, limit: 100 });
+    const salesReps = await User.findAll({ where: conditions.join(' AND '), params, limit: 100 });
     res.json({ success: true, data: salesReps });
   } catch (error) {
     next(error);

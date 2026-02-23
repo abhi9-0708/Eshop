@@ -22,74 +22,79 @@ function formatUser(row) {
 }
 
 const User = {
-  findById(id, withPassword = false) {
-    const db = getDb();
-    const row = db.prepare('SELECT * FROM users WHERE _id = ?').get(id);
-    if (!row) return null;
-    const user = formatUser(row);
-    if (withPassword) user.password = row.password;
+  async findById(id, withPassword = false) {
+    const pool = getDb();
+    const { rows } = await pool.query('SELECT * FROM users WHERE _id = $1', [id]);
+    if (!rows[0]) return null;
+    const user = formatUser(rows[0]);
+    if (withPassword) user.password = rows[0].password;
     return user;
   },
 
-  findByEmail(email, withPassword = false) {
-    const db = getDb();
-    const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-    if (!row) return null;
-    const user = formatUser(row);
-    if (withPassword) user.password = row.password;
+  async findByEmail(email, withPassword = false) {
+    const pool = getDb();
+    const { rows } = await pool.query('SELECT * FROM users WHERE LOWER(email) = LOWER($1)', [email]);
+    if (!rows[0]) return null;
+    const user = formatUser(rows[0]);
+    if (withPassword) user.password = rows[0].password;
     return user;
   },
 
-  findAll({ where = '1=1', params = [], orderBy = 'createdAt DESC', limit = 20, offset = 0, excludeFields = [] } = {}) {
-    const db = getDb();
-    const rows = db.prepare(`SELECT * FROM users WHERE ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`).all(...params, limit, offset);
+  async findAll({ where = '1=1', params = [], orderBy = '"createdAt" DESC', limit = 20, offset = 0, excludeFields = [] } = {}) {
+    const pool = getDb();
+    const paramCount = params.length;
+    const sql = `SELECT * FROM users WHERE ${where} ORDER BY ${orderBy} LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    const { rows } = await pool.query(sql, [...params, limit, offset]);
     return rows.map(r => formatUser(r));
   },
 
   async create(data) {
-    const db = getDb();
+    const pool = getDb();
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(data.password, salt);
 
-    db.prepare(`INSERT INTO users (_id, name, email, password, role, phone, territory, distributor, isActive, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`).run(
-      id, data.name, data.email, hashedPassword,
-      data.role || 'sales_rep', data.phone || null, data.territory || null,
-      data.distributor || null, now, now
+    await pool.query(
+      `INSERT INTO users (_id, name, email, password, role, phone, territory, distributor, "isActive", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9, $10)`,
+      [id, data.name, data.email, hashedPassword,
+       data.role || 'sales_rep', data.phone || null, data.territory || null,
+       data.distributor || null, now, now]
     );
     return User.findById(id);
   },
 
-  update(id, data) {
-    const db = getDb();
+  async update(id, data) {
+    const pool = getDb();
     const sets = [];
     const values = [];
+    let paramIdx = 1;
     const allowed = ['name', 'email', 'role', 'phone', 'territory', 'isActive', 'distributor', 'lastLogin', 'avatar', 'password'];
     for (const key of allowed) {
       if (data[key] !== undefined) {
-        sets.push(`${key} = ?`);
-        values.push(key === 'isActive' ? (data[key] ? 1 : 0) : data[key]);
+        const col = ['isActive', 'lastLogin'].includes(key) ? `"${key}"` : key;
+        sets.push(`${col} = $${paramIdx++}`);
+        values.push(key === 'isActive' ? Boolean(data[key]) : data[key]);
       }
     }
     if (sets.length === 0) return User.findById(id);
-    sets.push('updatedAt = ?');
+    sets.push(`"updatedAt" = $${paramIdx++}`);
     values.push(new Date().toISOString());
     values.push(id);
-    db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE _id = ?`).run(...values);
+    await pool.query(`UPDATE users SET ${sets.join(', ')} WHERE _id = $${paramIdx}`, values);
     return User.findById(id);
   },
 
-  delete(id) {
-    const db = getDb();
-    db.prepare('DELETE FROM users WHERE _id = ?').run(id);
+  async delete(id) {
+    const pool = getDb();
+    await pool.query('DELETE FROM users WHERE _id = $1', [id]);
   },
 
-  count(where = '1=1', params = []) {
-    const db = getDb();
-    const row = db.prepare(`SELECT COUNT(*) as count FROM users WHERE ${where}`).get(...params);
-    return row.count;
+  async count(where = '1=1', params = []) {
+    const pool = getDb();
+    const { rows } = await pool.query(`SELECT COUNT(*) as count FROM users WHERE ${where}`, params);
+    return parseInt(rows[0].count);
   },
 
   async comparePassword(candidatePassword, hashedPassword) {

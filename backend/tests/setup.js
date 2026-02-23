@@ -1,22 +1,25 @@
-const { MongoMemoryServer } = require('mongodb-memory-server');
-const mongoose = require('mongoose');
-
-let mongoServer;
+const { connectDB, closeDB, getDb } = require('../src/config/database');
 
 beforeAll(async () => {
-  mongoServer = await MongoMemoryServer.create();
-  const uri = mongoServer.getUri();
-  await mongoose.connect(uri);
+  await connectDB();
 });
 
 afterAll(async () => {
-  await mongoose.disconnect();
-  await mongoServer.stop();
+  await closeDB();
 });
 
 afterEach(async () => {
-  const collections = mongoose.connection.collections;
-  for (const key in collections) {
-    await collections[key].deleteMany({});
+  // Clean test data if needed
+  try {
+    const pool = getDb();
+    await pool.query('DELETE FROM order_status_history');
+    await pool.query('DELETE FROM order_items');
+    await pool.query('DELETE FROM visits');
+    await pool.query('DELETE FROM orders');
+    await pool.query('DELETE FROM retailers');
+    await pool.query('DELETE FROM products');
+    await pool.query('DELETE FROM users');
+  } catch (e) {
+    // ignore if tables don't exist yet
   }
 });

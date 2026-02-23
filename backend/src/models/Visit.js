@@ -21,35 +21,41 @@ function formatVisit(row) {
 }
 
 const Visit = {
-  findById(id) {
-    const row = getDb().prepare('SELECT * FROM visits WHERE _id = ?').get(id);
-    return formatVisit(row);
+  async findById(id) {
+    const pool = getDb();
+    const { rows } = await pool.query('SELECT * FROM visits WHERE _id = $1', [id]);
+    return formatVisit(rows[0]);
   },
 
-  findAll({ where = '1=1', params = [], orderBy = 'visitDate DESC', limit = 20, offset = 0 } = {}) {
-    const rows = getDb().prepare(`SELECT * FROM visits WHERE ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`).all(...params, limit, offset);
+  async findAll({ where = '1=1', params = [], orderBy = '"visitDate" DESC', limit = 20, offset = 0 } = {}) {
+    const pool = getDb();
+    const paramCount = params.length;
+    const sql = `SELECT * FROM visits WHERE ${where} ORDER BY ${orderBy} LIMIT $${paramCount + 1} OFFSET $${paramCount + 2}`;
+    const { rows } = await pool.query(sql, [...params, limit, offset]);
     return rows.map(formatVisit);
   },
 
-  create(data) {
-    const db = getDb();
+  async create(data) {
+    const pool = getDb();
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
-    db.prepare(`INSERT INTO visits (_id, retailer, salesRep, visitDate, checkInTime, checkOutTime, purpose, outcome, notes, orderCreated, locationLat, locationLng, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      id, data.retailer, data.salesRep, data.visitDate || now,
-      data.checkInTime || null, data.checkOutTime || null,
-      data.purpose, data.outcome || 'no_order', data.notes || null,
-      data.orderCreated || null,
-      data.location?.coordinates?.[1] || 0, data.location?.coordinates?.[0] || 0,
-      now, now
+    await pool.query(
+      `INSERT INTO visits (_id, retailer, "salesRep", "visitDate", "checkInTime", "checkOutTime", purpose, outcome, notes, "orderCreated", "locationLat", "locationLng", "createdAt", "updatedAt")
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      [id, data.retailer, data.salesRep, data.visitDate || now,
+       data.checkInTime || null, data.checkOutTime || null,
+       data.purpose, data.outcome || 'no_order', data.notes || null,
+       data.orderCreated || null,
+       data.location?.coordinates?.[1] || 0, data.location?.coordinates?.[0] || 0,
+       now, now]
     );
     return Visit.findById(id);
   },
 
-  count(where = '1=1', params = []) {
-    const row = getDb().prepare(`SELECT COUNT(*) as count FROM visits WHERE ${where}`).get(...params);
-    return row.count;
+  async count(where = '1=1', params = []) {
+    const pool = getDb();
+    const { rows } = await pool.query(`SELECT COUNT(*) as count FROM visits WHERE ${where}`, params);
+    return parseInt(rows[0].count);
   }
 };
 

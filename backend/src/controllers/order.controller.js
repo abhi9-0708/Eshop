@@ -13,31 +13,31 @@ const getOrders = async (req, res, next) => {
 
     const conditions = [];
     const params = [];
+    let paramIdx = 1;
 
-    // Role-based filtering
     if (req.user.role === 'distributor') {
-      conditions.push('o.distributor = ?');
+      conditions.push(`o.distributor = $${paramIdx++}`);
       params.push(req.user._id || req.user.id);
     } else if (req.user.role === 'sales_rep') {
-      conditions.push('o.salesRep = ?');
+      conditions.push(`o."salesRep" = $${paramIdx++}`);
       params.push(req.user._id || req.user.id);
     }
 
     if (status) {
-      conditions.push('o.status = ?');
+      conditions.push(`o.status = $${paramIdx++}`);
       params.push(status);
     }
 
     const where = conditions.length ? conditions.join(' AND ') : '1=1';
-    let orderBy = 'o.createdAt DESC';
+    let orderBy = 'o."createdAt" DESC';
     if (sort) {
       const desc = sort.startsWith('-');
       const field = sort.replace(/^-/, '');
-      orderBy = `o.${field} ${desc ? 'DESC' : 'ASC'}`;
+      orderBy = `o."${field}" ${desc ? 'DESC' : 'ASC'}`;
     }
 
-    const orders = Order.findAll({ where, params, orderBy, limit: limitNum, offset, populate: true });
-    const total = Order.count(where, params);
+    const orders = await Order.findAll({ where, params, orderBy, limit: limitNum, offset, populate: true });
+    const total = await Order.count(where, params);
 
     res.json({
       success: true,
@@ -52,7 +52,7 @@ const getOrders = async (req, res, next) => {
 // GET /api/orders/:id
 const getOrder = async (req, res, next) => {
   try {
-    const order = Order.findById(req.params.id, true);
+    const order = await Order.findById(req.params.id, true);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
@@ -67,18 +67,16 @@ const createOrder = async (req, res, next) => {
   try {
     const { retailer: retailerId, items, notes, deliveryDate, deliveryAddress, paymentMethod, taxRate = 0, discountAmount = 0 } = req.body;
 
-    // Validate retailer
-    const retailer = Retailer.findById(retailerId);
+    const retailer = await Retailer.findById(retailerId);
     if (!retailer) {
       return res.status(404).json({ success: false, message: 'Retailer not found' });
     }
 
-    // Build order items and calculate totals
     let subtotal = 0;
     const orderItems = [];
 
     for (const item of items) {
-      const product = Product.findById(item.product);
+      const product = await Product.findById(item.product);
       if (!product) {
         return res.status(404).json({ success: false, message: `Product not found: ${item.product}` });
       }
@@ -108,11 +106,10 @@ const createOrder = async (req, res, next) => {
     const taxAmount = subtotal * (taxRate / 100);
     const totalAmount = subtotal + taxAmount - discountAmount;
 
-    // Determine distributor
     const distributorId = typeof retailer.distributor === 'object' ? retailer.distributor._id : retailer.distributor;
     const salesRepId = req.user._id || req.user.id;
 
-    const order = Order.create({
+    const order = await Order.create({
       retailer: retailerId,
       distributor: distributorId,
       salesRep: salesRepId,
@@ -130,15 +127,15 @@ const createOrder = async (req, res, next) => {
     });
 
     // Reduce stock for each item
-    const db = getDb();
+    const pool = getDb();
     for (const item of orderItems) {
-      db.prepare('UPDATE products SET stock = stock - ?, updatedAt = ? WHERE _id = ?')
-        .run(item.quantity, new Date().toISOString(), item.product);
+      await pool.query('UPDATE products SET stock = stock - $1, "updatedAt" = $2 WHERE _id = $3',
+        [item.quantity, new Date().toISOString(), item.product]);
     }
 
     // Update retailer stats
-    db.prepare('UPDATE retailers SET totalOrders = totalOrders + 1, lastOrderDate = ?, outstandingBalance = outstandingBalance + ?, updatedAt = ? WHERE _id = ?')
-      .run(new Date().toISOString(), totalAmount, new Date().toISOString(), retailerId);
+    await pool.query('UPDATE retailers SET "totalOrders" = "totalOrders" + 1, "lastOrderDate" = $1, "outstandingBalance" = "outstandingBalance" + $2, "updatedAt" = $3 WHERE _id = $4',
+      [new Date().toISOString(), totalAmount, new Date().toISOString(), retailerId]);
 
     res.status(201).json({ success: true, data: order });
   } catch (error) {
@@ -150,7 +147,7 @@ const createOrder = async (req, res, next) => {
 const updateOrderStatus = async (req, res, next) => {
   try {
     const { status, notes } = req.body;
-    const order = Order.findById(req.params.id, true);
+    const order = await Order.findById(req.params.id, true);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
@@ -171,22 +168,21 @@ const updateOrderStatus = async (req, res, next) => {
       });
     }
 
-    // If cancelling, restore stock
     if (status === 'cancelled' && order.items) {
-      const db = getDb();
+      const pool = getDb();
       for (const item of order.items) {
-        db.prepare('UPDATE products SET stock = stock + ?, updatedAt = ? WHERE _id = ?')
-          .run(item.quantity, new Date().toISOString(), item.product);
+        await pool.query('UPDATE products SET stock = stock + $1, "updatedAt" = $2 WHERE _id = $3',
+          [item.quantity, new Date().toISOString(), item.product]);
       }
     }
 
-    Order.addStatusHistory(order._id, {
+    await Order.addStatusHistory(order._id, {
       status,
       changedBy: req.user._id || req.user.id,
       notes: notes || `Status changed to ${status}`
     });
 
-    const updated = Order.update(order._id, { status });
+    const updated = await Order.update(order._id, { status });
     res.json({ success: true, data: updated });
   } catch (error) {
     next(error);
@@ -197,7 +193,7 @@ const updateOrderStatus = async (req, res, next) => {
 const updatePaymentStatus = async (req, res, next) => {
   try {
     const { paymentStatus, paymentMethod } = req.body;
-    const order = Order.findById(req.params.id);
+    const order = await Order.findById(req.params.id);
     if (!order) {
       return res.status(404).json({ success: false, message: 'Order not found' });
     }
@@ -205,7 +201,7 @@ const updatePaymentStatus = async (req, res, next) => {
     if (paymentStatus) updateData.paymentStatus = paymentStatus;
     if (paymentMethod) updateData.paymentMethod = paymentMethod;
 
-    const updated = Order.update(order._id, updateData);
+    const updated = await Order.update(order._id, updateData);
     res.json({ success: true, data: updated });
   } catch (error) {
     next(error);

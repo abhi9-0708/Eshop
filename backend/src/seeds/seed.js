@@ -5,11 +5,11 @@ const Order = require('../models/Order');
 const { getDb } = require('../config/database');
 
 const seedDatabase = async () => {
-  const db = getDb();
+  const pool = getDb();
 
   // Check if already seeded
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
-  if (userCount > 0) {
+  const { rows } = await pool.query('SELECT COUNT(*) as count FROM users');
+  if (parseInt(rows[0].count) > 0) {
     console.log('Database already seeded, skipping...');
     return;
   }
@@ -77,7 +77,7 @@ const seedDatabase = async () => {
   console.log('Users seeded');
 
   // Create products
-  const products = Product.insertMany([
+  const products = await Product.insertMany([
     { name: 'Premium Cola', sku: 'BEV-001', description: 'Refreshing cola drink', category: 'Beverages', brand: 'FreshDrink', price: 24.99, costPrice: 18.00, unit: 'case', unitsPerCase: 24, stock: 500, minOrderQuantity: 5 },
     { name: 'Spring Water 500ml', sku: 'BEV-002', description: 'Natural spring water', category: 'Beverages', brand: 'PureSpring', price: 12.99, costPrice: 8.00, unit: 'case', unitsPerCase: 24, stock: 1000, minOrderQuantity: 10 },
     { name: 'Orange Juice 1L', sku: 'BEV-003', description: 'Fresh squeezed OJ', category: 'Beverages', brand: 'FreshDrink', price: 36.99, costPrice: 28.00, unit: 'case', unitsPerCase: 12, stock: 300, minOrderQuantity: 3 },
@@ -97,7 +97,7 @@ const seedDatabase = async () => {
   console.log('Products seeded');
 
   // Create retailers
-  const retailers = Retailer.insertMany([
+  const retailers = await Retailer.insertMany([
     { name: 'SuperMart Downtown', ownerName: 'Bob Wilson', email: 'bob@supermart.com', phone: '555-1001', address: { street: '123 Main St', city: 'New York', state: 'NY', zipCode: '10001' }, category: 'grocery', tier: 'gold', assignedTo: salesRep1._id, distributor: distributor1._id, creditLimit: 10000 },
     { name: 'QuickStop Express', ownerName: 'Alice Johnson', email: 'alice@quickstop.com', phone: '555-1002', address: { street: '456 Oak Ave', city: 'New York', state: 'NY', zipCode: '10002' }, category: 'general', tier: 'silver', assignedTo: salesRep1._id, distributor: distributor1._id, creditLimit: 5000 },
     { name: 'FreshDaily Market', ownerName: 'Charlie Brown', email: 'charlie@freshdaily.com', phone: '555-1003', address: { street: '789 Pine Rd', city: 'Brooklyn', state: 'NY', zipCode: '11201' }, category: 'grocery', tier: 'platinum', assignedTo: salesRep2._id, distributor: distributor1._id, creditLimit: 15000 },
@@ -130,9 +130,9 @@ const seedDatabase = async () => {
     };
   };
 
-  Order.create(createOrderData(0, [{ idx: 0, qty: 10 }, { idx: 3, qty: 5 }], 'delivered'));
-  Order.create(createOrderData(1, [{ idx: 1, qty: 20 }, { idx: 6, qty: 10 }], 'processing'));
-  Order.create(createOrderData(2, [{ idx: 2, qty: 5 }, { idx: 4, qty: 8 }, { idx: 9, qty: 15 }], 'pending'));
+  await Order.create(createOrderData(0, [{ idx: 0, qty: 10 }, { idx: 3, qty: 5 }], 'delivered'));
+  await Order.create(createOrderData(1, [{ idx: 1, qty: 20 }, { idx: 6, qty: 10 }], 'processing'));
+  await Order.create(createOrderData(2, [{ idx: 2, qty: 5 }, { idx: 4, qty: 8 }, { idx: 9, qty: 15 }], 'pending'));
 
   console.log('Orders seeded');
   console.log('Database seeding completed!');
